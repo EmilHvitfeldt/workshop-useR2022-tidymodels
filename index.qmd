@@ -1,5 +1,5 @@
 ---
-title: "useR2022-tidymodels-workshop"
+title: "Machine learning with {tidymodels}"
 ---
 
 ## Welcome  

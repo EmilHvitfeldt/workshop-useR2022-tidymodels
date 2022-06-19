@@ -2,35 +2,35 @@
   {
     "objectID": "index.html#welcome",
     "href": "index.html#welcome",
-    "title": "useR2022-tidymodels-workshop",
+    "title": "Machine learning with {tidymodels}",
     "section": "Welcome",
     "text": "Welcome\nSummary: This workshop will provide a gentle introduction to machine learning with R using the modern suite of predictive modeling packages called tidymodels. We will build, evaluate, compare, and tune predictive models. Along the way, we’ll learn about key concepts in machine learning including overfitting, the holdout method, the bias-variance trade-off, ensembling, cross-validation, and feature engineering. Learners will gain knowledge about good predictive modeling practices, as well as hands-on experience using tidymodels packages like parsnip, rsample, recipes, yardstick, and tune.\nPre-requisites: Some introductory experience with R."
   },
   {
     "objectID": "index.html#installation",
     "href": "index.html#installation",
-    "title": "useR2022-tidymodels-workshop",
+    "title": "Machine learning with {tidymodels}",
     "section": "Installation",
     "text": "Installation\nPlease join the workshop with a computer that has the following installed (all available for free):\nA recent version of R, available at https://cran.r-project.org/ A recent version of RStudio Desktop (RStudio Desktop Open Source License, at least v2022.02), available at https://www.rstudio.com/download The following R packages, which you can install from the R console:\n\ninstall.packages(c(\"embed\", \"forcats\",\"remotes\", \n                   \"tidymodels\", \"glmnet\"))\n\nremotes::install_github(\"emilhvitfeldt/elevators\")"
   },
   {
     "objectID": "index.html#slides",
     "href": "index.html#slides",
-    "title": "useR2022-tidymodels-workshop",
+    "title": "Machine learning with {tidymodels}",
     "section": "Slides",
     "text": "Slides\n\n1: Introduction\n2: Models\n3: Features\n4: Resampling\n5: Tuning"
   },
   {
     "objectID": "index.html#labs",
     "href": "index.html#labs",
-    "title": "useR2022-tidymodels-workshop",
+    "title": "Machine learning with {tidymodels}",
     "section": "Labs",
     "text": "Labs\nLink to lab for local download here"
   },
   {
     "objectID": "index.html#links",
     "href": "index.html#links",
-    "title": "useR2022-tidymodels-workshop",
+    "title": "Machine learning with {tidymodels}",
     "section": "Links",
     "text": "Links\n\nLink to tidymodels main website https://www.tidymodels.org/\nLink to “Tidy Modeling with R” book: https://www.tmwr.org/"
   },
