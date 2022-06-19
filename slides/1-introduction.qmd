@@ -1,0 +1,174 @@
+---
+title: "Introduction to tidymodels"
+subtitle: "useR2022"
+author: "Emil Hvitfelt"
+format: 
+  revealjs:
+    theme: [default, styles.scss]
+    width: 1600
+    height: 900
+knitr:
+  opts_chunk: 
+    echo: true
+    collapse: true
+    comment: "#>"
+---
+
+# Our goals for this workshop
+
+-   Introduce tidymodels and its general philosophy on modeling.
+-   Help you become proficient with the core packages for modeling.
+-   Point you to places to learn more and get help.
+
+# Why tidymodels?
+
+There are several other modeling frameworks in R that try to:
+
+-   create a uniform, [cohesive]{.pkg}, and unsurprising set of modeling APIs
+
+Examples are [caret]{.pkg}, [mlr3]{.pkg}, and others.
+
+-   [caret]{.pkg} is more favorable for people who prefer base R/traditional interfaces.
+-   [mlr3]{.pkg} is more pythonic and also has many features.
+-   [tidymodels]{.pkg} would probably be preferable to those who place importance on a tidy *R* interface, a large number of features, and the idea that the interfaces should enable the "pit of success".
+
+# The tidymodels package
+
+There are a lot of tidymodels packages but about 90% of the work is done by 5 packages. ([rsample]{.pkg}, [recipes]{.pkg}, [parsnip]{.pkg}, [tune]{.pkg}, and [yardstick]{.pkg})
+
+The best way to get started with tidymodels is to use the [tidymodels]{.pkg} meta-package. It loads the core packages plus some tidyverse packages.
+
+Some helpful links:
+
+-   List of [all tidymodels functions](https://www.tidymodels.org/find/#search-all-of-tidymodels)
+-   List of [all parsnip models](https://www.tidymodels.org/find/parsnip/)
+-   List of [all recipe steps](https://www.tidymodels.org/find/recipes/)
+
+# The tidymodels package
+
+```{r, message=TRUE}
+library(tidymodels)
+```
+
+# Managing name conflicts
+
+```{r, message=TRUE}
+tidymodels_prefer(quiet = FALSE)
+```
+
+# Base R and tidyverse differences
+
+::: columns
+::: {.column width="50%"}
+
+**Base R/caret**
+
+```{r, eval=FALSE}
+mtcars <- mtcars[order(mtcars$cyl), ]
+mtcars <- mtcars[, "mpg", drop = FALSE]
+
+
+# ──────────────────────────────────────────────
+
+mtcars$mp        # matches incomplete arg
+mtcars[, "mpg"]  # a vector
+
+
+# ──────────────────────────────────────────────
+
+num_args <- function(x) length(formals(x))
+
+
+num_args(caret::trainControl) + 
+  num_args(caret:::train.default)
+
+```
+
+    38
+:::
+
+::: {.column width="50%"}
+
+tidyverse/tidymodels
+
+```{r, eval = FALSE}
+mtcars %>% 
+  arrange(cyl) %>% 
+  select(mpg)
+
+# ──────────────────────────────────────────────
+
+tb_cars <- as_tibble(mtcars)
+tb_cars$mp        # fails
+tb_cars[, "mpg"]  # A tibble 
+
+# ──────────────────────────────────────────────
+
+
+
+num_args(linear_reg) + num_args(set_engine) + 
+  num_args(tune_grid) + num_args(control_grid) + 
+  num_args(vfold_cv)
+
+```
+
+    23
+:::
+:::
+
+---
+
+::: columns
+::: {.column width="50%"}
+
+### Example data set
+
+Data set of the registered elevator devices in New York City provided by the Department of Buildings in response to a September 2015 FOIL request
+
+<br>
+
+Filtered and cleaned for our usage
+
+<br>
+
+Our scenario today:
+
+You don't like elevators, and you want to predict how fast a given elevator is. Thus our outcome is **speed**
+
+:::
+
+::: {.column width="50%"}
+
+![](images/elevators.png)
+
+:::
+:::
+
+# Hands-On: Explore the Data
+
+Take a look at these data for a few minutes and see if you can find any interesting characteristics in the predictors or the outcome.  
+
+```{r}
+library(tidymodels)
+library(elevators)
+?elevators
+elevators
+```
+
+# Hands-On: Explore the Data
+
+```{r}
+elevators %>%
+  ggplot(aes(longitude, latitude, color = borough)) +
+  geom_point(alpha = 0.1) +
+  theme_minimal()
+```
+
+# Hands-On: Explore the Data
+
+```{r}
+elevators %>%
+  ggplot(aes(speed_fpm, capacity_lbs)) +
+  geom_point() +
+  theme_minimal()
+```

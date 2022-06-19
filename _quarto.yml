@@ -1,0 +1,17 @@
+project:
+  type: website
+  render:
+    - "*.qmd"
+    - "!static/labs.rmd"
+website:
+  title: "useR2022 tidymodels workshop"
+  navbar:
+    background: primary
+    left:
+      - href: index.qmd
+        text: Home
+
+format:
+  html:
+    theme: minty
+    css: styles.css

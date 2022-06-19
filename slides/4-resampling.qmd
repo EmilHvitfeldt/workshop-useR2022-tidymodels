@@ -1,0 +1,254 @@
+---
+title: "Using resampling to estimate performance"
+subtitle: "useR2022"
+author: "Emil Hvitfelt"
+format: 
+  revealjs:
+    theme: [default, styles.scss]
+    width: 1600
+    height: 900
+knitr:
+  opts_chunk: 
+    echo: true
+    collapse: true
+    comment: "#>"
+---
+
+```{r previously, include = FALSE}
+library(tidymodels)
+library(elevators)
+number_extractor <- function(x) {
+  x <- stringr::str_extract(x, "[0-9]+")
+  x <- as.integer(x)
+  x[x > 100] <- NA
+  x
+}
+
+elevators_cleaned <- elevators %>%
+  mutate(speed_fpm = log(speed_fpm + 0.5),
+         floor_from = number_extractor(floor_from),
+         floor_to = number_extractor(floor_to),
+         travel_distance = number_extractor(travel_distance)) %>%
+  select(-device_number, -bin, -tax_block, -tax_lot, -house_number, 
+         -street_name, -zip_code)
+
+set.seed(1234)
+elevators_split <- initial_split(elevators_cleaned)
+elevators_split
+
+elevators_train <- training(elevators_split)
+elevators_test  <- testing(elevators_split)
+
+elevators_rec <- 
+  recipe(speed_fpm ~ ., data = elevators_train) %>% 
+  step_date(approval_date, lastper_insp_date, keep_original_cols = FALSE) %>%
+  step_impute_mean(all_numeric_predictors()) %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_unknown(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>% 
+  step_zv(all_predictors()) %>%
+  step_normalize(all_numeric_predictors()) %>% 
+  step_corr(all_numeric_predictors(), threshold = 0.9)
+
+lm_spec <- linear_reg() 
+
+elevators_wflow <- 
+  workflow() %>% 
+  add_model(lm_spec) %>% 
+  add_recipe(elevators_rec)
+```
+
+::: r-fit-text
+What is 
+
+resampling?
+:::
+
+# Resampling methods
+
+::: columns
+::: {.column width="50%"}
+These are additional data splitting schemes that are applied to the _training_ set and are used for **estimating model performance**. 
+
+They attempt to simulate slightly different versions of the training set. These versions of the original are split into two model subsets:
+
+* The _analysis set_ is used to fit the model (analogous to the training set). 
+* Performance is determined using the _assessment set_. 
+
+This process is repeated many times. 
+:::
+
+::: {.column width="50%"}
+![](images/resampling.svg){fig-align="center"}
+
+
+There are [different flavors of resampling](https://bookdown.org/max/FES/resampling.html) but we will focus on one method in these notes.
+:::
+:::
+
+# The model workflow and resampling
+
+All resampling methods repeat this process multiple times: 
+
+![](images/diagram-resampling.svg)
+
+The final resampling estimate is the average of all of the estimated metrics (e.g. RMSE, etc).
+
+# V-Fold cross-validation
+
+::: columns
+::: {.column width="50%"}
+Here, we randomly split the training data into _V_ distinct blocks of roughly equal size (AKA the "folds").
+
+* We leave out the first block of analysis data and fit a model.
+* This model is used to predict the held-out block of assessment data.
+* We continue this process until we've predicted all _V_ assessment blocks
+
+The final performance is based on the hold-out predictions by _averaging_ the statistics from the _V_ blocks. 
+:::
+
+::: {.column width="50%"}
+_V_ is usually taken to be 5 or 10 and leave-one-out cross-validation has each sample as a block. 
+
+**Repeated CV** can be used when training set sizes are small. 5 repeats of 10-fold CV averages for 50 sets of metrics.
+:::
+:::
+
+#  3-Fold cross-validation with _n_ = 30
+
+Randomly assign each sample to one of three folds
+
+![](images/three-CV.svg){fig-align="center"}
+
+#  3-Fold cross-validation with _n_ = 30
+
+![](images/three-CV-iter.svg){fig-align="center"}
+
+# Resampling results
+
+The goal of resampling is to produce a single estimate of performance for a model. 
+
+Even though we end up estimating _V_ models (for _V_-fold CV), these models are discarded after we have our performance estimate. 
+
+Resampling is basically an empirical simulation system_ used to understand how well the model would work on _new data_.
+
+# Cross-validating using rsample
+
+rsample has a number of resampling functions built in. One is `vfold_cv()`, for performing V-Fold cross-validation like we've been discussing.
+
+```{r cv}
+set.seed(2453)
+
+elevators_folds <- vfold_cv(elevators_train) #10-fold is default
+
+elevators_folds
+```
+
+# Cross-validating Using rsample 
+
+- Each individual split object is similar to the `initial_split()` example.
+- Use `analysis()` to extract the resample's data used for the fitting process.
+- Use `assessment()` to extract the resample's data used for the performance process.
+
+::: columns
+::: {.column width="50%"}
+```{r cv-splits}
+elevators_folds$splits[[1]]
+```
+:::
+
+::: {.column width="50%"}
+```{r cv-analysis}
+elevators_folds$splits[[1]] %>% 
+  analysis() %>%
+  dim()
+```
+
+```{r cv-assessment}
+elevators_folds$splits[[1]] %>% 
+  assessment() %>%
+  dim()
+```
+:::
+:::
+
+# Our resampling object
+
+```{r}
+elevators_folds
+```
+
+We will fit `r nrow(elevators_folds)` models on  `r nrow(elevators_folds)` slightly different analysis sets. 
+
+Each will produce a separate RMSE and we will average the  `r nrow(elevators_folds)` RMSE values to get the resampling estimate of that statistic. 
+
+# Generating the resampling statistics
+
+Let's use the workflow from the last section (`elevators_wflow`). 
+
+In tidymodels, there is a function called `fit_resamples()` that will do all of this for us:
+
+```{r, warning = FALSE}
+ctrl <- control_resamples(save_pred = TRUE)
+
+elevators_res <-fit_resamples(
+  object = elevators_wflow,
+  resamples = elevators_folds,
+  control = ctrl
+)
+elevators_res
+```
+
+# Getting the results
+
+To obtain the resampling estimates of performance: 
+
+```{r}
+collect_metrics(elevators_res)
+```
+
+To get the holdout predictions: 
+
+```{r}
+elevators_pred <- collect_predictions(elevators_res)
+elevators_pred %>% slice(1:4)
+```
+
+# Plot performance
+
+::: columns
+::: {.column width="40%"}
+
+A simple ggplot with a custom `coord_*` can be used. 
+
+```{r, eval=FALSE}
+elevators_pred %>% 
+  ggplot(aes(.pred, speed_fpm)) + 
+  geom_abline(lty = 2, col = "green") +
+  geom_point(alpha = 0.3, cex = 2) +
+  coord_obs_pred() +
+  theme_minimal()
+```
+:::
+
+::: {.column width="50%"}
+```{r, echo=FALSE}
+elevators_pred %>% 
+  ggplot(aes(.pred, speed_fpm)) + 
+  geom_abline(lty = 2, col = "green") +
+  geom_point(alpha = 0.3, cex = 2) +
+  coord_obs_pred() +
+  theme_minimal()
+```
+:::
+:::
+
+# Some notes
+
+* These models fits are independent of one another. [Parallel processing](https://www.tmwr.org/resampling.html#parallel) can be used to significantly speed up the training process. 
+* The individual models can [be saved](https://www.tmwr.org/resampling.html#extract) so you can look at variation in the model parameters or recipes steps. 
+* If you are interested in a [validation set](https://www.tmwr.org/resampling.html#validation), [tidymodels]{.pkg} considers that a single resample of the data. Everything else in this chapter works the same. 
+
+# Hands-On: Perform resampling
+
+Go to the lab and fit your model within some resamples.

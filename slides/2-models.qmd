@@ -1,0 +1,443 @@
+---
+title: "Creating Models"
+subtitle: "useR2022"
+author: "Emil Hvitfelt"
+format: 
+  revealjs:
+    theme: [default, styles.scss]
+    width: 1600
+    height: 900
+knitr:
+  opts_chunk: 
+    echo: true
+    collapse: true
+    comment: "#>"
+---
+
+# What is a model?
+
+In tidymodels, there is the idea that a model-oriented data analysis consists of
+
+-   a **preprocessor**, and
+-   a **model**
+
+The preprocessor might be a simple formula or a sophisticated recipe.
+
+It's important to consider both of these activities as part of the data analysis process.
+
+-   Post-model activities should also be included there (e.g. calibration, cut-off optimization, etc.)
+-   (We don't have those implemented yet)
+
+# Basic tidymodels components
+
+![](images/blocks.png){fig-align="center"}
+
+# A relevant example
+
+Let's say that we have some highly correlated predictors and we want to reduce the correlation by first applying principal component analysis to the data.
+
+-   AKA principal component regression
+
+# A relevant example
+
+Let's say that we have some highly correlated predictors and we want to reduce the correlation by first applying principal component analysis to the data.
+
+-   AKA ~~principal component regression~~ feature extraction
+
+# A relevant example
+
+Let's say that we have some highly correlated predictors and we want to reduce the correlation by first applying principal component analysis to the data.
+
+-   AKA ~~principal component regression~~ feature extraction
+
+What do we consider the estimation part of this process?
+
+# Is it this?
+
+![](images/faux-model.svg){fig-align="center"}
+
+# Or is it this?
+
+![](images/the-model.svg){fig-align="center"}
+
+# What's the difference?
+
+It is easy to think that the model fit is the only estimation steps.
+
+There are cases where this could go really wrong:
+
+-   Poor estimation of performance (buy treating the PCA parts as known)
+-   Selection bias in feature selection
+-   Information/data leakage
+
+These problems are exacerbated as the preprocessors increase in complexity and/or effectiveness.
+
+*We'll come back to this at the end of this section*
+
+------------------------------------------------------------------------
+
+<br><br><br><br>
+
+::: r-fit-text
+Data Splitting
+:::
+
+------------------------------------------------------------------------
+
+::: r-fit-text
+Always have a seperate
+
+piece of data that can
+
+**contradict**
+
+what you **believe**
+:::
+
+# Data splitting and spending
+
+How do we "spend" the data to find an optimal model?
+
+We *typically* split data into training and test data sets:
+
+-   ***Training Set***: these data are used to estimate model parameters and to pick the values of the complexity parameter(s) for the model.
+-   ***Test Set***: these data can be used to get an independent assessment of model efficacy. **They should not be used during model training** (like, at all).
+
+# Data splitting and spending
+
+The more data we spend, the better estimates we'll get (provided the data is accurate).
+
+Given a fixed amount of data:
+
+-   Too much spent in training won't allow us to get a good assessment of predictive performance. We may find a model that fits the training data very well, but is not generalizable (overfitting)
+-   Too much spent in testing won't allow us to get a good assessment of model parameters
+
+Statistically, the best course of action would be to use all the data for model building and use statistical methods to get good estimates of error.
+
+From a non-statistical perspective, many consumers of complex models emphasize the need for an untouched set of samples to evaluate performance.
+
+# Mechanics of data splitting
+
+There are a few different ways to do the split: simple random sampling, *stratified sampling based on the outcome*, by date, or methods that focus on the distribution of the predictors.
+
+For stratification:
+
+-   **classification**: this would mean sampling within the classes to preserve the distribution of the outcome in the training and test sets
+-   **regression**: determine the quartiles of the data set and sample within those artificial groups
+
+For *time series*, we often use the most recent data as the test set.
+
+# Cleaning the data
+
+We don't need all the variables, and some are not encoded in a nice manner
+
+```{r}
+library(tidymodels)
+library(elevators)
+number_extractor <- function(x) {
+  x <- stringr::str_extract(x, "[0-9]+")
+  x <- as.integer(x)
+  x[x > 100] <- NA
+  x
+}
+
+elevators_cleaned <- elevators %>%
+  mutate(speed_fpm = log(speed_fpm + 0.5),
+         floor_from = number_extractor(floor_from),
+         floor_to = number_extractor(floor_to),
+         travel_distance = number_extractor(travel_distance)) %>%
+  select(-device_number, -bin, -tax_block, -tax_lot, -house_number, 
+         -street_name, -zip_code)
+```
+
+# Splitting with elevators data
+
+`initial_split()` can be used when we use randomness to make the split.
+
+```{r split}
+set.seed(1234)
+elevators_split <- initial_split(elevators_cleaned)
+elevators_split
+
+elevators_train <- training(elevators_split)
+elevators_test  <- testing(elevators_split)
+
+c(training = nrow(elevators_train), testing = nrow(elevators_test))
+```
+
+------------------------------------------------------------------------
+
+<br><br><br><br>
+
+::: r-fit-text
+Creating Models in R
+:::
+
+# Specifying models in R using formulas
+
+To fit a model to the housing data, the model terms must be specified. Historically, there are two main interfaces for doing this.
+
+The **formula** interface using R [formula rules](https://cran.r-project.org/doc/manuals/r-release/R-intro.html#Formulae-for-statistical-models) to specify a *symbolic* representation of the terms:
+
+Variables + interactions
+
+```{r formula-1, eval = FALSE}
+# day_of_week is not in the data set but day_of_week = lubridate::wday(lastper_insp_date, label = TRUE)
+model_fn(speed_fpm ~ day_of_week + car_buffer_type + day_of_week:car_buffer_type, 
+         data = elevators_train)
+```
+
+Shorthand for all predictors
+
+```{r formula-2, eval = FALSE}
+model_fn(speed_fpm ~ ., data = elevators_train)
+```
+
+Inline functions / transformations
+
+```{r formula-3, eval = FALSE}
+model_fn(log10(speed_fpm) ~ ns(capacity_lbs, df = 3) + ., data = elevators_train)
+```
+
+# Downsides to formulas
+
+-   You can't nest in-line functions such as `model_fn(y ~ pca(scale(x1), scale(x2), scale(x3)), data = dat)`.
+-   All the model matrix calculations happen at once and can't be recycled when used in a model function.
+-   For very *wide* data sets, the formula method can be [extremely inefficient](https://rviews.rstudio.com/2017/03/01/the-r-formula-method-the-bad-parts/).
+-   There are limited *roles* that variables can take which has led to several re-implementations of formulas.
+-   Specifying multivariate outcomes is clunky and inelegant.
+-   Not all modeling functions have a formula method (consistency!).
+
+# Specifying models without formulas
+
+Some modeling function have a non-formula (XY) interface. This usually has arguments for the predictors and the outcome(s):
+
+```{r non-formula, eval = FALSE}
+# Usually, the variables must all be numeric
+pre_vars <- c("capacity_lbs", "elevators_per_building")
+model_fn(x = elevators_train[, pre_vars],
+         y = elevators_train$speed_fpm)
+```
+
+This is inconvenient if you have transformations, factor variables, interactions, or any other operations to apply to the data prior to modeling.
+
+Overall, it is difficult to predict if a package has one or both of these interfaces. For example, `lm` only has formulas.
+
+There is a **third interface**, using *recipes* that will be discussed later that solves some of these issues.
+
+# A linear regression model
+
+Let's start by fitting an ordinary linear regression model to the training set. You can choose the model terms for your model, but I will use a very simple model:
+
+```{r lm-1}
+simple_lm <- lm(speed_fpm ~ borough + capacity_lbs, data = elevators_train)
+```
+
+Before looking at coefficients, we should do some model checking to see if there is anything obviously wrong with the model.
+
+To get the statistics on the individual data points, we will use the awesome `broom` package:
+
+```{r lm-broom, warning= FALSE, message= FALSE}
+simple_lm_values <- augment(simple_lm)
+names(simple_lm_values)
+```
+
+------------------------------------------------------------------------
+
+<br><br><br><br>
+
+::: r-fit-text
+Fitting via tidymodels
+:::
+
+# The parsnip package
+
+::: columns
+::: {.column width="50%"}
+- A tidy unified _interface_ to models
+- `lm()` isn't the only way to perform linear regression
+  - [glmnet]{.pkg} for regularized regression
+  - [stan]{.pkg} for Bayesian regression
+  - [keras]{.pkg} for regression using tensorflow
+- But...remember the consistency slide?
+  - Each interface has its own minutiae to remember
+  - [parsnip]{.pkg} standardizes all that!
+:::
+
+::: {.column width="50%"}
+![](images/all_the_models.jpeg){fig-align="center"}
+:::
+:::
+
+# Parsnip in action
+
+::: columns
+::: {.column width="50%"}
+1) Create specification
+2) Set the engine
+3) Fit the model
+
+```{r}
+spec_lin_reg <- linear_reg()
+spec_lin_reg
+
+spec_lm <- spec_lin_reg %>% set_engine("lm")
+spec_lm
+```
+:::
+
+::: {.column width="50%"}
+```{r}
+fit_lm <- fit(
+  spec_lm,
+  speed_fpm ~ borough + capacity_lbs,
+  data = elevators_train
+)
+
+fit_lm
+```
+
+Note: Models have default engines. We don't really need to use `set_engine("lm")` for this example. 
+:::
+:::
+
+# Alternative engines
+
+With [parsnip]{.pkg}, it is easy to switch to a different engine, like Stan, to run the
+same model with alternative backends.
+
+::: columns
+::: {.column width="50%"}
+
+```{r}
+spec_stan <- 
+  spec_lin_reg %>%
+  # Engine specific arguments are 
+  # passed through here
+  set_engine("stan", chains = 4, iter = 1000)
+
+# Otherwise, looks exactly the same!
+fit_stan <- fit(
+  spec_stan,
+  speed_fpm ~ borough + capacity_lbs,
+  data = elevators_train
+)
+```
+:::
+
+::: {.column width="50%"}
+```{r}
+coef(fit_stan$fit)
+
+coef(fit_lm$fit)
+```
+:::
+:::
+
+# Duplicate computations
+
+Note that, for both of these fits, some of the computations are repeated. 
+
+For example, the formula method does a fair amount of work to figure out how to turn the data frame into a matrix of predictors. 
+
+When there are special effects (e.g. splines), dummy variables, interactions, or other components, the formula/terms objects have to keep track of everything. 
+
+In cases where there are a lot of _predictors_, these computations can consume a lot of resources. If we can save them, that would be helpful. 
+
+The answer is a _workflow_ object. These bundle together a preprocessor (such as a formula) along with a model.
+
+# A modeling _workflow_ 
+
+We can _optionally_ bundle the recipe and model together into a <span style="color:LightGray;"><strike>pipeline</strike></span> _workflow_:
+
+```{r workflow}
+reg_wflow <- 
+  workflow() %>%    # attached with the tidymodels package
+  add_model(spec_lm) %>% 
+  add_formula(speed_fpm ~ borough + capacity_lbs) # or add_recipe() or add_variables()
+
+reg_fit <- fit(reg_wflow, data = elevators_train)
+reg_fit
+```
+
+# Swapping models
+
+```{r workflow-stan}
+stan_wflow <- 
+  reg_wflow %>% 
+  update_model(spec_stan)
+
+set.seed(21)
+stan_fit <- fit(stan_wflow, data = elevators_train)
+stan_fit
+```
+
+# Workflows
+
+Once the first model is fit, the preprocessor (i.e. the formula) is processed and the model matrix is formed. 
+
+New models don't need to repeat those computations. 
+
+Some other nice features: 
+
+* Workflows are smarter with data than `model.matrix()` in terms of new factor levels. 
+* Other preprocessors can be used: recipes and `dplyr::select()` statements (that do no data processing).
+* As will be seen later, they can help organize your work when a sequence of models are used. 
+* A workflow captures the entire modeling process (mentioned earlier) and a simple `fit()` and `predict()` sequence are used for all of the estimation parts. 
+
+# Using workflows to predict
+
+```{r}
+# generate some bogus data (instead of using the training or test sets)
+set.seed(3)
+shuffled_data <- map_dfc(elevators, ~ sample(.x, size = 10))
+
+predict(stan_fit, shuffled_data) %>% slice(1:3)
+predict(stan_fit, shuffled_data, type = "pred_int") %>% slice(1:3)
+```
+
+# The tidymodels prediction guarantee!
+
+* The predictions will always be inside a **tibble**.
+* The column names and types are **unsurprising**.
+* The number of rows in `new_data` and the output **are the same**. 
+
+This enables the use of `bind_cols()` to combine the original data and the predictions.
+
+# Evaluating models
+
+tidymodels has a [lot of performance metrics](https://yardstick.tidymodels.org/reference/index.html) for different types of models (e.g. binary classification, etc). 
+
+Each takes a tibble as an input along with the observed and predicted column names: 
+
+```{r}
+pred_results <- 
+  augment(stan_fit, shuffled_data)
+
+# Data was randomized; these results should be bad
+pred_results %>% rmse(truth = speed_fpm, estimate = .pred)
+```
+
+# Multiple metrics/KPIs
+
+A _metric set_ can bundle multiple statistics: 
+
+```{r metric-set}
+reg_metrics <- metric_set(rmse, rsq, mae, ccc)
+
+# A tidy format of the results
+pred_results %>% reg_metrics(truth = speed_fpm, estimate = .pred)
+```
+
+# broom methods
+
+[parsnip]{.pkg} and [workflow]{.pkg} fits have corresponding [broom]{.pkg} tidiers: 
+
+```{r}
+glance(reg_fit)
+tidy(reg_fit)
+```
+
+# Hands-On: Fit a model
+
+Go to the lab and try to fit some models. The labs include the skeleton. Try to mix it up with different predictors or models.

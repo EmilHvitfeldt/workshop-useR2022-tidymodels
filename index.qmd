@@ -1,0 +1,45 @@
+---
+title: "useR2022-tidymodels-workshop"
+---
+
+## Welcome  
+
+Summary: This workshop will provide a gentle introduction to machine learning with R using the modern suite of predictive modeling packages called **tidymodels**.
+We will build, evaluate, compare, and tune predictive models. Along the way, we’ll learn about key concepts in machine learning including overfitting, the holdout method, the bias-variance trade-off, ensembling, cross-validation, and feature engineering.
+Learners will gain knowledge about good predictive modeling practices, as well as hands-on experience using **tidymodels** packages like **parsnip**, **rsample**, **recipes**, **yardstick**, and **tune**.
+
+Pre-requisites: Some introductory experience with R.
+
+## Installation 
+
+Please join the workshop with a computer that has the following installed (all available for free):
+
+A recent version of R, available at https://cran.r-project.org/
+A recent version of RStudio Desktop (RStudio Desktop Open Source License, at least v2022.02), available at https://www.rstudio.com/download
+The following R packages, which you can install from the R console:
+
+```{r, eval=FALSE}
+install.packages(c("embed", "forcats","remotes", 
+                   "tidymodels", "glmnet"))
+
+remotes::install_github("emilhvitfeldt/elevators")
+```
+
+
+## Slides
+
++ [1: Introduction](slides/1-introduction.html)
++ [2: Models](slides/2-models.html)
++ [3: Features](slides/3-features.html)
++ [4: Resampling](slides/4-resampling.html)
++ [5: Tuning](slides/5-tuning.html)
+
+## Labs
+
+Link to lab for local download <a href="static/labs.Rmd" download>here</a>
+
+## Links
+
++ Link to tidymodels main website <https://www.tidymodels.org/>
+
++ Link to "Tidy Modeling with R" book: <https://www.tmwr.org/>

@@ -1,0 +1,346 @@
+---
+title: "Feature Engineering"
+subtitle: "useR2022"
+author: "Emil Hvitfelt"
+format: 
+  revealjs:
+    theme: [default, styles.scss]
+    width: 1600
+    height: 900
+knitr:
+  opts_chunk: 
+    echo: true
+    collapse: true
+    comment: "#>"
+---
+
+```{r previously, include = FALSE}
+library(tidymodels)
+library(elevators)
+number_extractor <- function(x) {
+  x <- stringr::str_extract(x, "[0-9]+")
+  x <- as.integer(x)
+  x[x > 100] <- NA
+  x
+}
+
+elevators_cleaned <- elevators %>%
+  mutate(speed_fpm = log(speed_fpm + 0.5),
+         floor_from = number_extractor(floor_from),
+         floor_to = number_extractor(floor_to),
+         travel_distance = number_extractor(travel_distance)) %>%
+  select(-device_number, -bin, -tax_block, -tax_lot, -house_number, 
+         -street_name, -zip_code)
+
+set.seed(1234)
+elevators_split <- initial_split(elevators_cleaned)
+elevators_split
+
+elevators_train <- training(elevators_split)
+elevators_test  <- testing(elevators_split)
+```
+
+# What is feature engineering?
+
+First thing's first: what's a feature? 
+
+I tend to think of a feature as some representation of a predictor that will be used in a model. 
+
+Old-school features: 
+
+ * Interactions
+ * Polynomial expansions/splines
+ * PCA feature extraction
+ 
+"Feature engineering" sounds pretty cool, but let's take a minute to talk about _preprocessing_ data.  
+
+# Two types of preprocessing
+
+![](images/fe_venn.svg){fig-align="center"}
+
+# Two types of preprocessing
+
+![](images/fe_venn_info.svg){fig-align="center"}
+
+# Easy examples
+
+For example, centering and scaling are definitely not feature engineering.
+
+Consider the `lastper_insp_date` field in the elevators data. If given as a raw predictor, it is converted to an integer. 
+
+It can be re-encoded as:
+
+* Days since a reference date
+* Day of the week
+* Month
+* Year
+* Indicators for holidays
+
+# General definitions
+
+* _Data preprocessing_ are the steps that you take to make your model successful. 
+* _Feature engineering_ are what you do to the original predictors to make the model do the least work to predict the outcome as well as possible. 
+
+We'll demonstrate the [recipes]{.pkg} package for all of your data needs. 
+
+# Recipes prepare your data for modeling
+
+The package is extensible framework for pipeable sequences of feature engineering steps provides preprocessing tools to be applied to data. 
+    
+Statistical parameters for the steps can be estimated from an initial data set and then applied to other data sets. 
+    
+The resulting processed output can then be used as inputs for statistical or machine learning models.
+
+# A first recipe
+
+```{r}
+elevators_rec <- 
+  recipe(speed_fpm ~ ., data = elevators_train)
+
+# If ncol(data) is large, you can use
+# recipe(data = elevators_train)
+```
+
+Based on the formula, the function assigns columns to roles of "outcome" or "predictor"
+
+```{r}
+summary(elevators_rec)
+```
+
+# A first recipe - work with dates
+
+```{r}
+elevators_rec <- 
+  recipe(speed_fpm ~ ., data = elevators_train) %>% 
+  step_date(approval_date, lastper_insp_date, keep_original_cols = FALSE)
+```
+
+This creates three new columns for each variable in the data based on the date. Now that the day-of-the-week column is a factor.
+
+# A first recipe - Dealing with missing data
+
+```{r}
+elevators_rec <- 
+  recipe(speed_fpm ~ ., data = elevators_train) %>% 
+  step_date(approval_date, lastper_insp_date, keep_original_cols = FALSE) %>%
+  step_impute_mean(all_numeric_predictors()) %>%
+  step_unknown(all_nominal_predictors()) %>%
+  step_novel(all_nominal_predictors())
+```
+
+Many `step_impute_*()` functions are used for numeric predictors, `step_unknown()` is used for categorical predictors
+
+`step_novel()` helps with new levels after training
+
+Note that we can use fancy selector
+
+# A first recipe -create indicator variables
+
+```{r}
+elevators_rec <- 
+  recipe(speed_fpm ~ ., data = elevators_train) %>% 
+  step_date(approval_date, lastper_insp_date, 
+            features = c("dow", "month", "year"), 
+            keep_original_cols = FALSE) %>%
+  step_impute_mean(all_numeric_predictors()) %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_unknown(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors())
+```
+
+For any factor or character predictors, make binary indicators. 
+
+There are _many_ recipe steps that can convert categorical predictors to numeric columns. 
+
+# A first recipe - filter out constant columns
+
+```{r}
+elevators_rec <- 
+  recipe(speed_fpm ~ ., data = elevators_train) %>% 
+  step_date(approval_date, lastper_insp_date, keep_original_cols = FALSE) %>%
+  step_impute_mean(all_numeric_predictors()) %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_unknown(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>% 
+  step_zv(all_predictors())
+```
+
+In case there is a level that never was observed, we can delete any _zero-variance_ predictors that have a single unique value.
+
+Note that the selector chooses all columns with a role of "predictor"
+
+# A first recipe - normalization
+
+```{r}
+elevators_rec <- 
+  recipe(speed_fpm ~ ., data = elevators_train) %>% 
+  step_date(approval_date, lastper_insp_date, 
+            features = c("dow", "month", "year"), 
+            keep_original_cols = FALSE) %>%
+  step_impute_mean(all_numeric_predictors()) %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_unknown(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>% 
+  step_zv(all_predictors()) %>%
+  step_normalize(all_numeric_predictors())
+```
+
+This centers and scales the numeric predictors. 
+
+Note that this will use the training set to estimate the means and standard deviations of the data. 
+All data put through the recipe will be normalized using those statistics (there is no re-estimation). 
+
+# A first recipe - reduce correlation
+
+```{r}
+elevators_rec <- 
+  recipe(speed_fpm ~ ., data = elevators_train) %>% 
+  step_date(approval_date, lastper_insp_date, keep_original_cols = FALSE) %>%
+  step_impute_mean(all_numeric_predictors()) %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_unknown(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>% 
+  step_zv(all_predictors()) %>%
+  step_normalize(all_numeric_predictors()) %>% 
+  step_corr(all_numeric_predictors(), threshold = 0.9)
+```
+
+To deal with highly correlated predicors, find the minimum predictor set to remove to make the pairwise correlations are less than 0.9.
+
+There are other filter steps too, 
+
+# Other possible steps
+
+```{r, eval = FALSE}
+elevators_rec <- 
+  recipe(speed_fpm ~ ., data = elevators_train) %>% 
+  step_date(approval_date, lastper_insp_date, keep_original_cols = FALSE) %>%
+  step_impute_mean(all_numeric_predictors()) %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_unknown(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>% 
+  step_zv(all_predictors()) %>%
+  step_normalize(all_numeric_predictors()) %>% 
+  step_pca(all_numeric_predictors())
+```
+
+PCA feature extraction...
+
+# Recipes are estimated
+
+_Every_ preprocessing step in a recipe that involved calculations uses the _training set_. For example: 
+
+ * Levels of a factor
+ * Determination of zero-variance
+ * Normalization
+ * Feature extraction
+ 
+and so on. 
+
+Once a a recipe is added to a workflow, this occurs when `fit()` is called. 
+
+# Recipes follow this strategy
+
+![](images/the-model.svg){fig-align="center"}
+
+# Adding recipes to workflows
+
+Let's stick to a linear model for now and add a recipe (instead of a formula):
+
+::: columns
+::: {.column width="50%"}
+```{r, results='hide'}
+lm_spec <- linear_reg() 
+
+elevators_wflow <- 
+  workflow() %>% 
+  add_model(lm_spec) %>% 
+  add_recipe(elevators_rec)
+
+elevators_wflow
+```
+:::
+
+::: {.column width="50%"}
+```{r, echo=FALSE}
+elevators_wflow
+```
+:::
+:::
+
+# Estimate via `fit()`
+
+Let's stick to a linear model for now and add a recipe (instead of a formula):
+
+::: columns
+::: {.column width="50%"}
+```{r, results='hide'}
+elevators_fit <- elevators_wflow %>% fit(elevators_train)
+elevators_fit
+```
+:::
+
+::: {.column width="50%"}
+```{r, echo=FALSE}
+elevators_fit
+```
+:::
+:::
+
+# Prediction
+
+When `predict()` is called, the fitted recipe is applied to the new data before it is predicted by the model:
+
+```{r, warning = FALSE}
+predict(elevators_fit, elevators_train)
+```
+
+You don't need to do anything else
+
+# Tidying a recipe
+
+::: columns
+::: {.column width="50%"}
+`tidy(recipe)` gives a summary of the steps:
+
+```{r}
+tidy(elevators_rec)
+```
+
+After fitting the recipe, you might want access to the statistics from each step. We can pull the fitted recipe from the workflow and choose which step to tidy by number or `id`
+
+:::
+
+::: {.column width="50%"}
+```{r}
+elevators_fit %>% 
+  extract_recipe() %>% 
+  tidy(number = 7) # For step normalize
+```
+:::
+:::
+
+# Debugging a recipe
+
+90% of the time, you will want to use a workflow to estimate and apply a recipe. 
+
+If you have an error, the original recipe object (e.g. `elevators_rec`) can be estimated manually with a function called `bake()` (analogous to `fit()`). 
+
+This returns the fitted recipe. This can help debug any issues. 
+
+Another function (`bake()`) is analogous to `predict()` and gives you the processed data back. 
+
+# Fun facts about recipes
+
+* Once `fit()` is called on a workflow, changing the model does not re-fit the recipe. 
+* A list of all known steps is [here](https://www.tidymodels.org/find/recipes/). 
+* Some steps can be [skipped](https://recipes.tidymodels.org/articles/Skipping.html) when using `predict()`. 
+* The [order](https://recipes.tidymodels.org/articles/Ordering.html) of the steps matters. 
+* There are [recipes]{.pkg}-adjacent packages with more steps: [embed]{.pkg}, [timetk]{.pkg}, [textrecipes]{.pkg}, [themis]{.pkg}, and others. 
+    * Julia and I have written an amazing text processing book: [_Supervised Machine Learning for Text Analysis in R_](https://smltar.com/)
+* There are a lot of ways to handle [categorical predictors](https://recipes.tidymodels.org/articles/Dummies.html) even those with novel levels. 
+* Several [dplyr]{.pkg} steps exist, such as `step_mutate()`. 
+
+# Hands-On: Add a recipe to your model
+
+Go to the lab and add a custom recipe to perform feature engineering.
